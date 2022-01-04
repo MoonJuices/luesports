@@ -1,0 +1,820 @@
+---
+title: "Untitled"
+author: "Lucas"
+date: "1/29/2021"
+output: html_document
+---
+```{r}
+#CLEAR
+rm(list = ls())
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+
+library(tree)
+library(randomForest)
+```
+
+```{r}
+#read in data
+lol <- read.csv("luesports2021-03-02-match-history.csv")
+
+#modify lol
+lol$wr <- ifelse(lol$victorydefeat=="victory",1,0)
+lol$summonerrole <- with(lol, interaction(summoner, role))
+lol
+
+#create lulol
+lulol <- lol %>% 
+  filter(team=="lindenwood university") %>% 
+  filter(summoner!="bricktps")
+lulol
+```
+
+```{r}
+# #GAMES PLAYED BY SUMMONER/ROLE
+# ggplot(lulol)+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(summonerrole)),fill=victorydefeat),position='dodge')+
+#   labs(title="Games Played by Summoner",x="Summoner",y="Games Played")+
+#   coord_flip()
+# ggplot(lulol)+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(summoner)),fill=victorydefeat),position='dodge')+
+#   labs(title="Games Played by Summoner",x="Summoner",y="Games Played")+
+#   coord_flip()
+# 
+# #WINRATE BY SUMMONER/ROLE
+# ggplot(lulol, mapping=aes(x=reorder(summonerrole,wr), y=wr,fill=role))+
+#   stat_summary(fun.y="mean",geom="bar")+
+#   labs(title="Win Rate by Summoner",x="Summoner",y="Win Rate")+
+#   coord_flip()
+# ggplot(lulol, mapping=aes(x=reorder(summoner,wr), y=wr))+
+#   stat_summary(fun.y="mean",geom="bar")+
+#   labs(title="Win Rate by Summoner",x="Summoner",y="Win Rate")+
+#   coord_flip()
+
+#Games played by summoner
+df.numgamessum <- lulol %>% 
+  group_by(summoner) %>% 
+  dplyr::summarize(games = n())
+
+#Winrate by summoner
+df.wrsum <- lulol %>% 
+  group_by(summoner) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+#Merge tables and calculate values
+df1.wr <- merge(df.numgamessum, df.wrsum, by="summoner")
+df1.wr$wins <- df1.wr$games * df1.wr$winrate
+df1.wr$losses <- df1.wr$games * (1 - df1.wr$winrate)
+df1.wr %>% arrange(winrate)
+
+#Create separate table that splits up wins/losses onto two separate rows
+df1.wr2 <- df1.wr %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+#Plot
+ggplot(df1.wr2, aes(x=reorder(summoner,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Games Played by Summoner",x="Summoner",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df1.wr,aes(reorder(summoner, games), winrate,fill=winrate))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(winrate,3)),nudge_y = 0.03,size=4)+
+  labs(title="Win Rate by Summoner",x="Summoner",y="Win Rate")+
+  coord_flip()
+
+df.numgamessumrole <- lulol %>% 
+  group_by(summonerrole) %>% 
+  dplyr::summarize(games = n())
+
+df.wrsumrole <- lulol %>% 
+  group_by(summonerrole) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wr <- merge(df.numgamessumrole, df.wrsumrole, by="summonerrole")
+df.wr$wins <- df.wr$games * df.wr$winrate
+df.wr$losses <- df.wr$games * (1 - df.wr$winrate)
+df.wr %>% arrange(winrate)
+
+df.wr2 <- df.wr %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+# ggplot(df.wr2, aes(x=reorder(summonerrole,games), y=value, fill=variable))+
+#   geom_bar(stat='identity',position='dodge')+
+#   geom_text(aes(label=round(value,3)),position=position_dodge(1),size=3)+
+#   coord_flip()
+
+ggplot(df.wr2, aes(x=reorder(summonerrole,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Games Played by Summoner/Role",x="Summoner/Role",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.wr,aes(reorder(summonerrole, games), winrate,fill=winrate))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(winrate,3)),nudge_y = 0.04,size=4)+
+  labs(title="Win Rate by Summoner/Role",x="Summoner/Role",y="Win Rate")+
+  coord_flip()
+```
+
+```{r}
+df.kdasumrole <- aggregate(x = cbind(kill=lulol$kill, death=lulol$death, assist=lulol$assist),
+                by = list(summonerrole=lulol$summonerrole, summoner=lulol$summoner, role=lulol$role),
+                FUN = sum)
+df.kdasumrole$kda <- (df.kdasumrole$kill + df.kdasumrole$assist) / df.kdasumrole$death
+df.kdasumrole %>% arrange(kda)
+
+ggplot(df.kdasumrole, mapping=aes(x=reorder(summonerrole, kda),y=kda,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda, 2)),nudge_y = 0.25,size=4)+
+  labs(title="KDA by Summoner/Role",x="Summoner",y="KDA",fill="Summoner")+
+  coord_flip()
+
+
+
+df.kdasum <- aggregate(x = cbind(kill=lulol$kill, death=lulol$death, assist=lulol$assist),
+                by = list(summoner=lulol$summoner),
+                FUN = sum)
+df.kdasum$kda <- (df.kdasum$kill + df.kdasum$assist) / df.kdasum$death
+df.kdasum %>% arrange(kda)
+
+ggplot(df.kdasum, mapping=aes(x=reorder(summoner, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda, 2)),nudge_y = 0.2,size=4)+
+  labs(title="KDA by Summoner",x="Summoner",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+df.averagesumrole <- aggregate(x = cbind(kill=lulol$kill, death=lulol$death, assist=lulol$assist, firstblood=lulol$firstblood, damageshare=lulol$damageshare, csperminute=lulol$csperminute, visionscoreperhour=lulol$visionscoreperhour, wr=lulol$wr),
+                by = list(summonerrole=lulol$summonerrole, summoner=lulol$summoner, role=lulol$role),
+                FUN = mean)
+df1.averagesumrole <- merge(df.numgamessumrole, df.averagesumrole, by="summonerrole")
+
+df.totalsum <- aggregate(x=cbind(kill=lulol$kill,death=lulol$death,assist=lulol$assist,controlwardspurchased=lulol$controlwardspurchased),
+                         by = list(summoner=lulol$summoner),
+                         FUN = sum)
+#Total Kills
+ggplot(df.totalsum, mapping=aes(x=reorder(summoner, kill),y=kill,fill=kill))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=kill),nudge_y=10,size=4)+
+  labs(title="Total Kills by Players",x="Summoner",y="Kills",fill="Kills")+
+  coord_flip()
+
+#Total Deaths
+ggplot(df.totalsum, mapping=aes(x=reorder(summoner, death),y=death,fill=death))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=death),nudge_y=10,size=4)+
+  labs(title="Total Deaths by Players",x="Summoner",y="Deaths",fill="Deaths")+
+  coord_flip()
+
+#Total Assists
+ggplot(df.totalsum, mapping=aes(x=reorder(summoner, assist),y=assist,fill=assist))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=assist),nudge_y=10,size=4)+
+  labs(title="Total Assists by Players",x="Summoner",y="Assists",fill="Assist")+
+  coord_flip()
+
+#Total Control Wards Purchased
+ggplot(df.totalsum, mapping=aes(x=reorder(summoner, controlwardspurchased),y=controlwardspurchased,fill=controlwardspurchased))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=controlwardspurchased),nudge_y=10,size=4)+
+  labs(title="Total Control Wards Purchased by Players",x="Summoner",y="Control Wards Purchased",fill="Control Wards")+
+  coord_flip()
+
+#Average Kills
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, kill),y=kill,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kill,2)),nudge_y=0.4,size=4)+
+  labs(title="Average Kills by Players",x="Summoner/Role",y="Kills",fill="Summoner")+
+  coord_flip()
+
+#Average Deaths
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, death),y=death,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(death,2)),nudge_y=0.4,size=4)+
+  labs(title="Average Deaths by Players",x="Summoner/Role",y="Deaths",fill="Summoner")+
+  coord_flip()
+
+#Average Assists
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, assist),y=assist,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(assist,2)),nudge_y=0.6,size=4)+
+  labs(title="Average Assists by Players",x="Summoner/Role",y="Assists",fill="Summoner")+
+  coord_flip()
+
+#Damage Share
+# ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, games),y=damageshare,fill=summoner))+
+#   geom_bar(stat="identity")+
+#   geom_text(aes(label=round(damageshare,3)),nudge_y=0.02,size=4)+
+#   labs(title="Average Damage Share by Players",x="Summoner/Role",y="Damage Share",fill="Summoner")+
+#   coord_flip()
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, damageshare),y=damageshare,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(damageshare,3)),nudge_y=0.02,size=4)+
+  labs(title="Average Damage Share by Players",x="Summoner/Role",y="Damage Share",fill="Summoner")+
+  coord_flip()
+
+#CS Per Minute
+# ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, games),y=csperminute,fill=summoner))+
+#   geom_bar(stat="identity")+
+#   geom_text(aes(label=round(csperminute,2)),nudge_y=0.4,size=4)+
+#   labs(title="Average CS Per Minute by Players",x="Summoner/Role",y="CS Per Minute",fill="Summoner")+
+#   coord_flip()
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, csperminute),y=csperminute,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(csperminute,2)),nudge_y=0.4,size=4)+
+  labs(title="Average CS Per Minute by Players",x="Summoner/Role",y="CS Per Minute",fill="Summoner")+
+  coord_flip()
+
+#Vision Score Per Hour
+# ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, games),y=visionscoreperhour,fill=summoner))+
+#   geom_bar(stat="identity")+
+#   geom_text(aes(label=round(visionscoreperhour,1)),nudge_y=4,size=4)+
+#   labs(title="Average Vision Score Per Hour by Players",x="Summoner/Role",y="Vision Score Per Hour",fill="Summoner")+
+#   coord_flip()
+ggplot(df1.averagesumrole, mapping=aes(x=reorder(summonerrole, visionscoreperhour),y=visionscoreperhour,fill=summoner))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(visionscoreperhour,1)),nudge_y=4,size=4)+
+  labs(title="Average Vision Score Per Hour by Players",x="Summoner/Role",y="Vision Score Per Hour",fill="Summoner")+
+  coord_flip()
+```
+
+```{r}
+# lol %>% 
+#   filter(summoner=="VinaZz VI") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "David", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="MoonJuices") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Lucas", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="LoL Coach Sam") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Sam", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="Litning Drincer") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Scott", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="Puzyri") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Dominic", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="snickerpig") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Max", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="YoStone") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Matias", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="ZenDofu") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Santiago", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+# lol %>% 
+#   filter(summoner=="h0gaboga") %>% 
+#   ggplot()+
+#   geom_bar(mapping=aes(x=fct_rev(fct_infreq(champion)),fill=victorydefeat))+
+#   labs(title = "Jacob", x="Champion", y="Games")+
+#   theme(legend.position = "none")+
+#   coord_flip()
+```
+
+```{r}
+#DAVID
+df.lusummoner <- lol %>% 
+  filter(summoner=="VinaZz VI")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="David's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="David's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="David's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Lucas
+df.lusummoner <- lol %>% 
+  filter(summoner=="MoonJuices")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Lucas's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Lucas's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Lucas's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Sam
+df.lusummoner <- lol %>% 
+  filter(summoner=="LoL Coach Sam")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Sam's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Sam's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Sam's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Scott
+df.lusummoner <- lol %>% 
+  filter(summoner=="Litning Drincer")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Scott's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Scott's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Scott's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Dom
+df.lusummoner <- lol %>% 
+  filter(summoner=="Puzyri")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Dom's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Dom's KDAs (ordered by number of games",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Dom's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Max
+df.lusummoner <- lol %>% 
+  filter(summoner=="snickerpig")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Max's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Max's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Max's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Matias
+df.lusummoner <- lol %>% 
+  filter(summoner=="YoStone")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Matias's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Matias's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Matias's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Santiago
+df.lusummoner <- lol %>% 
+  filter(summoner=="ZenDofu")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Santiago's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Santiago's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Santiago's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Jacob
+df.lusummoner <- lol %>% 
+  filter(summoner=="h0gaboga")
+
+df.numgameslusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarize(games = n())
+
+df.wrlusummoner <- df.lusummoner %>% 
+  group_by(champion) %>% 
+  dplyr::summarise_at(vars(wr),list(winrate = mean))
+
+df.wrlusummoner1 <- merge(df.numgameslusummoner, df.wrlusummoner, by="champion")
+df.wrlusummoner1$wins <- df.wrlusummoner1$games * df.wrlusummoner1$winrate
+df.wrlusummoner1$losses <- df.wrlusummoner1$games * (1 - df.wrlusummoner1$winrate)
+df.wrlusummoner1 %>% arrange(winrate)
+
+df.wrlusummoner2 <- df.wrlusummoner1 %>% 
+  tidyr::pivot_longer(cols=c('wins','losses'), names_to='variable',values_to='value')
+
+df.kdalusummoner <- aggregate(x = cbind(kill=df.lusummoner$kill, death=df.lusummoner$death, assist=df.lusummoner$assist),
+                by = list(champion=df.lusummoner$champion),
+                FUN = sum)
+df.kdalusummoner$kda <- (df.kdalusummoner$kill + df.kdalusummoner$assist) / df.kdalusummoner$death
+df.kdalusummoner %>% arrange(kda)
+
+df.lusumstats <- merge(df.wrlusummoner1, df.kdalusummoner, by="champion")
+
+ggplot(df.wrlusummoner2, aes(x=reorder(champion,games), y=value, fill=variable))+
+  geom_bar(stat='identity',position='stack')+
+  geom_text(aes(label=round(value,3)),position=position_stack(vjust=0.5),size=3.5)+
+  labs(title="Jacob's Games",x="Champion",y="Games")+
+  theme(legend.position = "none")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, games),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Jacob's KDAs (ordered by number of games)",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+
+ggplot(df.lusumstats, mapping=aes(x=reorder(champion, kda),y=kda,fill=kda))+
+  geom_bar(stat="identity")+
+  geom_text(aes(label=round(kda,2)),nudge_y=1,size=4)+
+  labs(title="Jacob's KDAs",x="Champion",y="KDA",fill="KDA")+
+  coord_flip()
+```
+
+```{r}
+#Machine Learning
+#General Model
+mod <- lm(data=lol, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+summary(mod)
+
+#Separate Data by Role
+# loltop <- lol %>% 
+#   filter(role=="top")
+# loljng <- lol %>% 
+#   filter(role=="jungle")
+# lolmid <- lol %>% 
+#   filter(role=="mid")
+# lolbot <- lol %>% 
+#   filter(role=="adc")
+# lolsup <- lol %>% 
+#   filter(role=="support")
+
+#Generate Models by Role
+# modtop <- lm(data=loltop, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+# modjng <- lm(data=loljng, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+# modmid <- lm(data=lolmid, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+# modbot <- lm(data=lolbot, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+# modsup <- lm(data=lolsup, formula = wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle)
+# summary(modtop)
+# summary(modjng)
+# summary(modmid)
+# summary(modbot)
+# summary(modsup)
+```
+
+```{r}
+#Tree
+set.seed(3)
+
+index <- sample(1:nrow(lol), (2/3)*nrow(lol))
+
+train <- lol[index, ]
+
+test <- lol[-index, ]
+
+tree1.lol <- tree(wr~side+kill+death+assist+largestkillingspree+largestmultikill+firstblood+totaldamagedealttochampions+physicaldamagedealttochampions+magicdamagedealttochampions+truedamagedealttochampions+totaldamagedealt+physicaldamagedealt+magicdamagedealt+truedamagedealt+largestcriticalstrike+totaldamagetoobjectives+totaldamagetoturrets+damagehealed+damagetaken+physicaldamagetaken+magicdamagetaken+truedamagetaken+wardsplaced+wardsdestroyed+controlwardspurchased+goldearned+goldspent+minionskilled+neutralminionskilled+neutralminionskilledinteamsjungle+neutralminionskilledinenemyjungle, data=train)
+
+cv1.lol <- cv.tree(tree1.lol)
+
+plot(cv1.lol$size, cv1.lol$dev, type = 'b')
+```
+
+```{r}
+#Prune Tree
+prune1.lol = prune.tree(tree1.lol, best = 4)
+
+plot(prune1.lol)
+
+text(prune1.lol, pretty = 0)
+
+#Calculate MSE
+yhat_cv <-  predict(prune1.lol, newdata = test)
+
+mean((yhat_cv-test$wr)^2)
+```
+
+
+
